@@ -2,7 +2,7 @@
 
 A lightweight web-based file server for Termux on Android. Access and manage your Termux files from any device on your local network through a modern, responsive web interface with features like file upload/download, preview, sharing, and user authentication.
 
-![Termux-WebStorage Preview](preview.jpg)
+<img src="preview.jpg" alt="Termux-WebStorage Preview" width="400">
 
 ## Features
 
