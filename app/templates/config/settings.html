@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Termux NAS{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card shadow mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-gear me-2"></i>Application Settings</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('config.index') }}">
+                    {{ form.hidden_tag() }}
+                    
+                    <div class="mb-3 form-check">
+                        {{ form.auth_required(class="form-check-input") }}
+                        {{ form.auth_required.label(class="form-check-label") }}
+                        <div class="form-text">If disabled, anyone can access your NAS without authentication.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.max_upload_size.label(class="form-label") }}
+                        {{ form.max_upload_size(class="form-control") }}
+                        <div class="form-text">Maximum file size for uploads in megabytes.</div>
+                        {% for error in form.max_upload_size.errors %}
+                        <div class="text-danger">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.share_link_expiry.label(class="form-label") }}
+                        {{ form.share_link_expiry(class="form-control") }}
+                        <div class="form-text">Number of days before share links expire. Set to 0 for no expiry.</div>
+                        {% for error in form.share_link_expiry.errors %}
+                        <div class="text-danger">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.default_theme.label(class="form-label") }}
+                        {{ form.default_theme(class="form-select") }}
+                        <div class="form-text">Default theme for new users and non-authenticated visitors.</div>
+                    </div>
+                    
+                    <div>
+                        {{ form.submit(class="btn btn-primary") }}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card shadow mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-hdd me-2"></i>Storage</h5>
+            </div>
+            <div class="card-body">
+                <div class="progress mb-3">
+                    <div class="progress-bar bg-primary" role="progressbar" style="width: {{ storage_info.disk_usage_percent }}%">
+                        {{ storage_info.disk_usage_percent|round|int }}%
+                    </div>
+                </div>
+                
+                <dl class="row">
+                    <dt class="col-sm-6">Total Size</dt>
+                    <dd class="col-sm-6">{{ storage_info.disk_total_human }}</dd>
+                    
+                    <dt class="col-sm-6">Used</dt>
+                    <dd class="col-sm-6">{{ storage_info.disk_used_human }}</dd>
+                    
+                    <dt class="col-sm-6">Free</dt>
+                    <dd class="col-sm-6">{{ storage_info.disk_free_human }}</dd>
+                    
+                    <dt class="col-sm-6">NAS Files</dt>
+                    <dd class="col-sm-6">{{ storage_info.total_size_human }}</dd>
+                </dl>
+                
+                <a href="{{ url_for('config.system') }}" class="btn btn-outline-primary">
+                    <i class="bi bi-info-circle me-1"></i>System Info
+                </a>
+            </div>
+        </div>
+        
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-question-circle me-2"></i>Help</h5>
+            </div>
+            <div class="card-body">
+                <p>These settings control the behavior of your Termux NAS application.</p>
+                <p>Changes will take effect after saving and may require a restart of the application.</p>
+                <p>For more information, refer to the documentation or contact support.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

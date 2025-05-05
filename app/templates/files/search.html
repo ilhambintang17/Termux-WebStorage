@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+
+{% block title %}Search Results - Termux NAS{% endblock %}
+
+{% block styles %}
+<style>
+    .file-item {
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    .file-item:hover {
+        background-color: rgba(var(--bs-primary-rgb), 0.1);
+    }
+    .file-icon {
+        font-size: 1.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col">
+        <h4><i class="bi bi-search me-2"></i>Search Results for "{{ query }}"</h4>
+    </div>
+</div>
+
+<div class="card shadow">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Results</h5>
+        <span class="badge bg-light text-dark">{{ pagination.showing_start }}-{{ pagination.showing_end }} of {{ total_items }} items found</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th style="width: 50%">Name</th>
+                        <th style="width: 15%">Size</th>
+                        <th style="width: 20%">Modified</th>
+                        <th style="width: 15%">Path</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in results %}
+                    <tr class="file-item {% if item.inaccessible|default(false) %}text-muted{% endif %}"
+                        data-is-dir="{{ item.is_dir|lower }}"
+                        data-path="{{ item.path }}"
+                        {% if not item.inaccessible|default(false) %}onclick="handleItemClick(this)"{% endif %}
+                        {% if item.inaccessible|default(false) %}title="This file cannot be accessed"{% endif %}>
+                        <td>
+                            <i class="{{ item.icon }} file-icon me-2 {% if item.is_dir %}text-warning{% elif item.inaccessible|default(false) %}text-secondary{% else %}text-primary{% endif %}"></i>
+                            <span>
+                                {{ item.name }}
+                                {% if item.inaccessible|default(false) %}<small class="text-danger">(inaccessible)</small>{% endif %}
+                            </span>
+                        </td>
+                        <td>{% if not item.is_dir %}{{ item.size_human }}{% else %}-{% endif %}</td>
+                        <td>
+                            {% if item.inaccessible|default(false) %}
+                                Unknown
+                            {% else %}
+                                {{ item.modified.strftime('%Y-%m-%d %H:%M') }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{{ url_for('files.index', subpath=item.path.rsplit('/', 1)[0] if '/' in item.path else '') }}"
+                               onclick="event.stopPropagation();" class="text-decoration-none">
+                                {{ item.path.rsplit('/', 1)[0] if '/' in item.path else '/' }}
+                            </a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="text-center py-4">
+                            <i class="bi bi-search display-4 d-block mb-2 text-muted"></i>
+                            <p class="text-muted">No results found for "{{ query }}"</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if pagination.total_pages > 1 or total_items > 0 %}
+        <div class="card-footer">
+            <div class="row align-items-center">
+                <div class="col-md-6 mb-2 mb-md-0">
+                    <div class="d-flex align-items-center">
+                        <span class="me-2">Items per page:</span>
+                        <select class="form-select form-select-sm" style="width: auto;" id="perPageSelect" onchange="changeItemsPerPage(this.value)">
+                            <option value="25" {% if pagination.per_page == 25 %}selected{% endif %}>25</option>
+                            <option value="50" {% if pagination.per_page == 50 %}selected{% endif %}>50</option>
+                            <option value="100" {% if pagination.per_page == 100 %}selected{% endif %}>100</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    {% if pagination.total_pages > 1 %}
+                    <nav aria-label="Page navigation">
+                        <ul class="pagination pagination-sm justify-content-md-end justify-content-center mb-0">
+                            <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                                <a class="page-link" href="{{ url_for('files.search', q=query, page=pagination.page-1, per_page=pagination.per_page) }}" aria-label="Previous">
+                                    <span aria-hidden="true">&laquo;</span>
+                                </a>
+                            </li>
+
+                            {% set start_page = [1, pagination.page - 2]|max %}
+                            {% set end_page = [pagination.total_pages, pagination.page + 2]|min %}
+
+                            {% if start_page > 1 %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('files.search', q=query, page=1, per_page=pagination.per_page) }}">1</a>
+                            </li>
+                            {% if start_page > 2 %}
+                            <li class="page-item disabled">
+                                <span class="page-link">...</span>
+                            </li>
+                            {% endif %}
+                            {% endif %}
+
+                            {% for p in range(start_page, end_page + 1) %}
+                            <li class="page-item {% if p == pagination.page %}active{% endif %}">
+                                <a class="page-link" href="{{ url_for('files.search', q=query, page=p, per_page=pagination.per_page) }}">{{ p }}</a>
+                            </li>
+                            {% endfor %}
+
+                            {% if end_page < pagination.total_pages %}
+                            {% if end_page < pagination.total_pages - 1 %}
+                            <li class="page-item disabled">
+                                <span class="page-link">...</span>
+                            </li>
+                            {% endif %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('files.search', q=query, page=pagination.total_pages, per_page=pagination.per_page) }}">{{ pagination.total_pages }}</a>
+                            </li>
+                            {% endif %}
+
+                            <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                                <a class="page-link" href="{{ url_for('files.search', q=query, page=pagination.page+1, per_page=pagination.per_page) }}" aria-label="Next">
+                                    <span aria-hidden="true">&raquo;</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </nav>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Handle changing items per page
+    function changeItemsPerPage(perPage) {
+        const currentUrl = new URL(window.location.href);
+        currentUrl.searchParams.set('per_page', perPage);
+        currentUrl.searchParams.set('page', 1); // Reset to page 1 when changing items per page
+        window.location.href = currentUrl.toString();
+    }
+
+    // Handle file/folder item click
+    function handleItemClick(element) {
+        const isDir = element.getAttribute('data-is-dir') === 'true';
+        const path = element.getAttribute('data-path');
+
+        if (isDir) {
+            window.location.href = "{{ url_for('files.index') }}?subpath=" + encodeURIComponent(path) + "&page=1";
+        } else {
+            window.location.href = "{{ url_for('files.preview', subpath='') }}" + encodeURIComponent(path);
+        }
+    }
+</script>
+{% endblock %}

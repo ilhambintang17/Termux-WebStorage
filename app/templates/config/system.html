@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}System Information - Termux NAS{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card shadow mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>System Information</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-4">Python Version</dt>
+                    <dd class="col-sm-8">{{ system_info.python_version }}</dd>
+                    
+                    <dt class="col-sm-4">Platform</dt>
+                    <dd class="col-sm-8">{{ system_info.platform }}</dd>
+                    
+                    <dt class="col-sm-4">Hostname</dt>
+                    <dd class="col-sm-8">{{ system_info.hostname }}</dd>
+                    
+                    <dt class="col-sm-4">App Path</dt>
+                    <dd class="col-sm-8">{{ system_info.app_path }}</dd>
+                    
+                    <dt class="col-sm-4">Storage Path</dt>
+                    <dd class="col-sm-8">{{ system_info.storage_path }}</dd>
+                </dl>
+            </div>
+        </div>
+        
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-activity me-2"></i>System Status</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle me-2"></i>System is running normally
+                </div>
+                
+                <h6>Storage Status</h6>
+                <div class="progress mb-3">
+                    <div class="progress-bar bg-primary" role="progressbar" style="width: {{ storage_info.disk_usage_percent }}%">
+                        {{ storage_info.disk_usage_percent|round|int }}%
+                    </div>
+                </div>
+                
+                <dl class="row">
+                    <dt class="col-sm-4">Total Size</dt>
+                    <dd class="col-sm-8">{{ storage_info.disk_total_human }}</dd>
+                    
+                    <dt class="col-sm-4">Used</dt>
+                    <dd class="col-sm-8">{{ storage_info.disk_used_human }}</dd>
+                    
+                    <dt class="col-sm-4">Free</dt>
+                    <dd class="col-sm-8">{{ storage_info.disk_free_human }}</dd>
+                </dl>
+                
+                <a href="{{ url_for('config.index') }}" class="btn btn-outline-primary">
+                    <i class="bi bi-gear me-1"></i>Back to Settings
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card shadow mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-hdd-network me-2"></i>About Termux NAS</h5>
+            </div>
+            <div class="card-body">
+                <div class="text-center mb-3">
+                    <i class="bi bi-hdd-network display-1 text-primary"></i>
+                    <h4>Termux NAS</h4>
+                    <p class="text-muted">Version 1.0.0</p>
+                </div>
+                
+                <p>A lightweight NAS solution for Termux on Android.</p>
+                <p>Access your files from any device on your network.</p>
+                
+                <div class="d-grid">
+                    <a href="https://github.com/yourusername/termux-nas" class="btn btn-outline-primary" target="_blank">
+                        <i class="bi bi-github me-1"></i>GitHub Repository
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-tools me-2"></i>Maintenance</h5>
+            </div>
+            <div class="card-body">
+                <p>Perform maintenance tasks on your Termux NAS:</p>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-primary" disabled>
+                        <i class="bi bi-arrow-clockwise me-1"></i>Check for Updates
+                    </button>
+                    <button class="btn btn-outline-primary" disabled>
+                        <i class="bi bi-database-gear me-1"></i>Optimize Database
+                    </button>
+                    <button class="btn btn-outline-danger" disabled>
+                        <i class="bi bi-arrow-counterclockwise me-1"></i>Reset Application
+                    </button>
+                </div>
+                <p class="text-muted mt-2 small">Maintenance features coming in a future update.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

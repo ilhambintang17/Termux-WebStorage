@@ -1,0 +1,322 @@
+{% extends "base.html" %}
+
+{% block title %}Shared File - Termux NAS{% endblock %}
+
+{% block styles %}
+<style>
+    .preview-container {
+        max-height: 70vh;
+        overflow: auto;
+    }
+    .preview-image {
+        max-width: 100%;
+        height: auto;
+    }
+    .preview-video {
+        max-width: 100%;
+        height: auto;
+    }
+    .preview-audio {
+        width: 100%;
+    }
+    .preview-text {
+        white-space: pre-wrap;
+        font-family: monospace;
+        max-height: 70vh;
+        overflow: auto;
+    }
+    .file-details dt {
+        font-weight: 500;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card shadow mb-4">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="{{ file.icon }} me-2"></i>{{ file.name }}</h5>
+                <div>
+                    <a href="{{ url_for('files.download_shared', token=share_link.token) }}" class="btn btn-sm btn-light" id="downloadBtn">
+                        <i class="bi bi-download me-1"></i>Download
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- Download Progress Bar (hidden by default) -->
+                <div id="downloadProgress" class="mb-3" style="display: none;">
+                    <div class="progress" style="height: 20px;">
+                        <div id="downloadProgressBar" class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar" style="width: 0%">
+                            <span id="downloadProgressText" class="fw-bold">0%</span>
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-between mt-1">
+                        <small id="downloadSpeed" class="text-muted">Speed: 0 KB/s</small>
+                        <small id="downloadSize" class="text-muted">0 MB / 0 MB</small>
+                        <small id="downloadTimeLeft" class="text-muted">Time left: Calculating...</small>
+                    </div>
+                </div>
+                <div class="preview-container">
+                    {% if file.type and file.type.startswith('image/') %}
+                    <img src="{{ url_for('files.thumbnail', subpath=file.path) }}" class="preview-image" alt="{{ file.name }}">
+                    {% elif file.type and file.type.startswith('video/') %}
+                    <video controls class="preview-video">
+                        <source src="{{ url_for('files.download_shared', token=share_link.token) }}" type="{{ file.type }}">
+                        Your browser does not support the video tag.
+                    </video>
+                    {% elif file.type and file.type.startswith('audio/') %}
+                    <audio controls class="preview-audio">
+                        <source src="{{ url_for('files.download_shared', token=share_link.token) }}" type="{{ file.type }}">
+                        Your browser does not support the audio tag.
+                    </audio>
+                    {% elif file.type and (file.type.startswith('text/') or file.type == 'application/json') %}
+                    <div class="preview-text" id="textPreview">
+                        <div class="d-flex justify-content-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                    {% elif file.type and file.type == 'application/pdf' %}
+                    <div class="ratio ratio-16x9">
+                        <iframe src="{{ url_for('files.download_shared', token=share_link.token) }}" allowfullscreen></iframe>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i class="{{ file.icon }} display-1 mb-3 text-primary"></i>
+                        <h4>Preview not available</h4>
+                        <p class="text-muted">This file type cannot be previewed in the browser.</p>
+                        <a href="{{ url_for('files.download_shared', token=share_link.token) }}" class="btn btn-primary" id="downloadBtnAlt">
+                            <i class="bi bi-download me-1"></i>Download File
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card shadow mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>File Details</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row file-details">
+                    <dt class="col-sm-4">Name</dt>
+                    <dd class="col-sm-8">{{ file.name }}</dd>
+
+                    <dt class="col-sm-4">Type</dt>
+                    <dd class="col-sm-8">{{ file.type }}</dd>
+
+                    <dt class="col-sm-4">Size</dt>
+                    <dd class="col-sm-8">{{ file.size_human }}</dd>
+
+                    <dt class="col-sm-4">Shared</dt>
+                    <dd class="col-sm-8">{{ share_link.created_at.strftime('%Y-%m-%d') }}</dd>
+
+                    {% if share_link.expires_at %}
+                    <dt class="col-sm-4">Expires</dt>
+                    <dd class="col-sm-8">{{ share_link.expires_at.strftime('%Y-%m-%d') }}</dd>
+                    {% endif %}
+                </dl>
+            </div>
+        </div>
+
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-shield-lock me-2"></i>Shared by Termux NAS</h5>
+            </div>
+            <div class="card-body">
+                <p>This file has been shared with you through Termux NAS.</p>
+                <p>You can download it or preview it directly in your browser.</p>
+                <a href="{{ url_for('files.download_shared', token=share_link.token) }}" class="btn btn-primary" id="downloadBtnFooter">
+                    <i class="bi bi-download me-1"></i>Download File
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Load text preview
+        const textPreview = document.getElementById('textPreview');
+
+        // Check if we need to load text preview
+        if (textPreview) {
+            const fileType = "{{ file.type|default('') }}";
+            const isTextFile = fileType.startsWith('text/') || fileType === 'application/json';
+
+            if (isTextFile) {
+                fetch('{{ url_for("files.download_shared", token=share_link.token) }}')
+                    .then(response => response.text())
+                    .then(text => {
+                        textPreview.textContent = text;
+                    })
+                    .catch(error => {
+                        textPreview.textContent = 'Error loading file: ' + error;
+                    });
+            }
+        }
+
+        // Download progress tracking
+        const downloadBtn = document.getElementById('downloadBtn');
+        const downloadBtnAlt = document.getElementById('downloadBtnAlt');
+        const downloadBtnFooter = document.getElementById('downloadBtnFooter');
+        const downloadProgress = document.getElementById('downloadProgress');
+        const downloadProgressBar = document.getElementById('downloadProgressBar');
+        const downloadProgressText = document.getElementById('downloadProgressText');
+        const downloadSpeed = document.getElementById('downloadSpeed');
+        const downloadSize = document.getElementById('downloadSize');
+        const downloadTimeLeft = document.getElementById('downloadTimeLeft');
+
+        // Format file size
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // Format time
+        function formatTime(seconds) {
+            if (seconds < 60) {
+                return Math.floor(seconds) + ' sec';
+            } else if (seconds < 3600) {
+                return Math.floor(seconds / 60) + ' min ' + Math.floor(seconds % 60) + ' sec';
+            } else {
+                const hours = Math.floor(seconds / 3600);
+                const minutes = Math.floor((seconds % 3600) / 60);
+                return hours + ' hr ' + minutes + ' min';
+            }
+        }
+
+        // Handle download with progress tracking
+        function handleDownload(e) {
+            e.preventDefault();
+
+            // Show progress bar
+            downloadProgress.style.display = 'block';
+
+            // Get download URL
+            const downloadUrl = this.getAttribute('href');
+
+            // Variables for tracking download progress
+            let startTime = Date.now();
+            let lastLoaded = 0;
+            let lastTime = startTime;
+            let totalSize = 0;
+            let loaded = 0;
+
+            // Create XMLHttpRequest
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', downloadUrl, true);
+            xhr.responseType = 'blob';
+
+            // Track progress
+            xhr.onprogress = function(event) {
+                if (event.lengthComputable) {
+                    totalSize = event.total;
+                    loaded = event.loaded;
+
+                    // Calculate progress percentage
+                    const percent = Math.round((loaded / totalSize) * 100);
+                    downloadProgressBar.style.width = percent + '%';
+                    downloadProgressText.textContent = percent + '%';
+
+                    // Update size display
+                    downloadSize.textContent = formatFileSize(loaded) + ' / ' + formatFileSize(totalSize);
+
+                    // Calculate speed
+                    const currentTime = Date.now();
+                    const timeDiff = (currentTime - lastTime) / 1000; // in seconds
+
+                    if (timeDiff > 0.5) { // Update every half second
+                        const loadDiff = loaded - lastLoaded; // bytes loaded since last update
+                        const speed = loadDiff / timeDiff; // bytes per second
+
+                        downloadSpeed.textContent = 'Speed: ' + formatFileSize(speed) + '/s';
+
+                        // Calculate time left
+                        const bytesLeft = totalSize - loaded;
+                        const timeLeft = bytesLeft / speed;
+                        downloadTimeLeft.textContent = 'Time left: ' + formatTime(timeLeft);
+
+                        // Update last values
+                        lastLoaded = loaded;
+                        lastTime = currentTime;
+                    }
+                }
+            };
+
+            // Handle download completion
+            xhr.onload = function() {
+                if (xhr.status === 200) {
+                    // Create download link
+                    const blob = xhr.response;
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = '{{ file.name }}';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+
+                    // Update progress bar to show completion
+                    downloadProgressBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+                    downloadProgressBar.classList.add('bg-success');
+                    downloadTimeLeft.textContent = 'Download complete';
+
+                    // Hide progress after a delay
+                    setTimeout(function() {
+                        downloadProgress.style.display = 'none';
+                        // Reset progress bar for future downloads
+                        downloadProgressBar.style.width = '0%';
+                        downloadProgressBar.classList.add('progress-bar-animated', 'progress-bar-striped');
+                        downloadProgressBar.classList.remove('bg-success');
+                    }, 3000);
+                }
+            };
+
+            // Handle errors
+            xhr.onerror = function() {
+                downloadProgressBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+                downloadProgressBar.classList.add('bg-danger');
+                downloadTimeLeft.textContent = 'Download failed';
+
+                // Offer retry option
+                setTimeout(function() {
+                    if (confirm('Download failed. Retry?')) {
+                        handleDownload.call(this, e);
+                    } else {
+                        downloadProgress.style.display = 'none';
+                    }
+                }, 1000);
+            };
+
+            // Start download
+            xhr.send();
+        }
+
+        // Attach event listeners to download buttons
+        if (downloadBtn) {
+            downloadBtn.addEventListener('click', handleDownload);
+        }
+
+        if (downloadBtnAlt) {
+            downloadBtnAlt.addEventListener('click', handleDownload);
+        }
+
+        if (downloadBtnFooter) {
+            downloadBtnFooter.addEventListener('click', handleDownload);
+        }
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,10 @@
+Flask==2.3.3
+Flask-Login==0.6.2
+Flask-WTF==1.1.1
+Werkzeug==2.3.7
+python-dotenv==1.0.0
+Flask-SQLAlchemy==3.0.5
+Pillow==10.0.0
+humanize==4.8.0
+python-magic==0.4.27
+gunicorn==21.2.0

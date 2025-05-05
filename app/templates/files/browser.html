@@ -1,0 +1,968 @@
+{% extends "base.html" %}
+
+{% block title %}File Browser - Termux NAS{% endblock %}
+
+{% block styles %}
+<style>
+    .file-item {
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    .file-item:hover {
+        background-color: rgba(var(--bs-primary-rgb), 0.1);
+    }
+    .file-icon {
+        font-size: 1.5rem;
+    }
+    .file-name {
+        max-width: 300px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        display: inline-block;
+    }
+    .breadcrumb-item a {
+        text-decoration: none;
+    }
+    .upload-drop-zone {
+        border: 2px dashed #ccc;
+        border-radius: 5px;
+        padding: 20px;
+        text-align: center;
+        transition: border 0.3s;
+    }
+    .upload-drop-zone.highlight {
+        border-color: var(--bs-primary);
+    }
+    .progress {
+        display: none;
+        margin-top: 10px;
+    }
+    /* Fix for delete modal with long filenames */
+    #deleteItemName {
+        word-break: break-word;
+        max-width: 100%;
+        display: inline-block;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                {% for crumb in breadcrumbs %}
+                <li class="breadcrumb-item {% if loop.last %}active{% endif %}">
+                    {% if not loop.last %}
+                    {% if crumb.path %}
+                    <a href="{{ url_for('files.index', subpath=crumb.path, page=1) }}">{{ crumb.name }}</a>
+                    {% else %}
+                    <a href="{{ url_for('files.index', page=1) }}">{{ crumb.name }}</a>
+                    {% endif %}
+                    {% else %}
+                    {{ crumb.name }}
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row mb-3">
+    <div class="col-md-8">
+        <div class="btn-toolbar" role="toolbar">
+            <div class="btn-group me-2" role="group">
+                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#uploadModal">
+                    <i class="bi bi-upload me-1"></i>Upload
+                </button>
+                <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#newFolderModal">
+                    <i class="bi bi-folder-plus me-1"></i>New Folder
+                </button>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-primary text-white">
+                <h6 class="mb-0"><i class="bi bi-pc-display me-2"></i>System</h6>
+            </div>
+            <div class="card-body">
+                <div class="system-info mb-2">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-primary"><i class="bi bi-hdd-fill me-1"></i>Storage:</span>
+                        <span class="text-dark" id="storageInfo">{{ storage_info.total_size_human }} / {{ storage_info.disk_total_human }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-primary"><i class="bi bi-cpu me-1"></i>CPU:</span>
+                        <span class="text-dark" id="cpuUsage">Checking...</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-primary"><i class="bi bi-memory me-1"></i>RAM:</span>
+                        <span class="text-dark" id="ramUsage">Checking...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-folder me-2"></i>Files</h5>
+        <span class="badge bg-light text-dark">{{ pagination.showing_start }}-{{ pagination.showing_end }} of {{ total_items }} items</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th style="width: 50%">Name</th>
+                        <th style="width: 15%">Size</th>
+                        <th style="width: 20%">Modified</th>
+                        <th style="width: 15%">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if current_path %}
+                    <tr class="file-item" onclick="goToParentDirectory()">
+                        <td>
+                            <i class="bi bi-arrow-up-circle file-icon me-2 text-primary"></i>
+                            <span>Parent Directory</span>
+                        </td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td>-</td>
+                    </tr>
+                    {% endif %}
+
+                    {% for item in items %}
+                    <tr class="file-item {% if item.inaccessible|default(false) %}text-muted{% endif %}"
+                        data-is-dir="{{ item.is_dir|lower }}"
+                        data-path="{{ item.path }}"
+                        {% if not item.inaccessible|default(false) %}onclick="handleItemClick(this)"{% endif %}
+                        {% if item.inaccessible|default(false) %}title="This file cannot be accessed"{% endif %}>
+                        <td>
+                            <i class="{{ item.icon }} file-icon me-2 {% if item.is_dir %}text-warning{% elif item.inaccessible|default(false) %}text-secondary{% else %}text-primary{% endif %}"></i>
+                            <span class="file-name" title="{{ item.name }}{% if item.inaccessible|default(false) %} (inaccessible){% endif %}">
+                                {{ item.name }}
+                                {% if item.inaccessible|default(false) %}<small class="text-danger">(inaccessible)</small>{% endif %}
+                            </span>
+                        </td>
+                        <td>{% if not item.is_dir %}{{ item.size_human }}{% else %}-{% endif %}</td>
+                        <td>
+                            {% if item.inaccessible|default(false) %}
+                                Unknown
+                            {% else %}
+                                {{ item.modified.strftime('%Y-%m-%d %H:%M') }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if not item.inaccessible|default(false) %}
+                            <div class="btn-group" role="group" onclick="event.stopPropagation();">
+                                <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">
+                                    <i class="bi bi-three-dots"></i>
+                                </button>
+                                <ul class="dropdown-menu">
+                                    {% if not item.is_dir %}
+                                    <li>
+                                        <a class="dropdown-item" href="{{ url_for('files.download', subpath=item.path) }}">
+                                            <i class="bi bi-download me-1"></i>Download
+                                        </a>
+                                    </li>
+                                    {% endif %}
+                                    <li>
+                                        <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#renameModal"
+                                           data-path="{{ item.path }}" data-name="{{ item.name }}">
+                                            <i class="bi bi-pencil me-1"></i>Rename
+                                        </a>
+                                    </li>
+                                    <li>
+                                        <a class="dropdown-item text-danger" href="#" data-bs-toggle="modal" data-bs-target="#deleteModal"
+                                           data-path="{{ item.path }}" data-name="{{ item.name }}">
+                                            <i class="bi bi-trash me-1"></i>Delete
+                                        </a>
+                                    </li>
+                                </ul>
+                            </div>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="text-center py-4">
+                            <i class="bi bi-folder-x display-4 d-block mb-2 text-muted"></i>
+                            <p class="text-muted">This folder is empty</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if pagination.total_pages > 1 or total_items > 0 %}
+        <div class="card-footer">
+            <div class="row align-items-center">
+                <div class="col-md-6 mb-2 mb-md-0">
+                    <div class="d-flex align-items-center">
+                        <span class="me-2">Items per page:</span>
+                        <select class="form-select form-select-sm" style="width: auto;" id="perPageSelect" onchange="changeItemsPerPage(this.value)">
+                            <option value="25" {% if pagination.per_page == 25 %}selected{% endif %}>25</option>
+                            <option value="50" {% if pagination.per_page == 50 %}selected{% endif %}>50</option>
+                            <option value="100" {% if pagination.per_page == 100 %}selected{% endif %}>100</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    {% if pagination.total_pages > 1 %}
+                    <nav aria-label="Page navigation">
+                        <ul class="pagination pagination-sm justify-content-md-end justify-content-center mb-0">
+                            <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                                <a class="page-link" href="{{ url_for('files.index', subpath=current_path, page=pagination.page-1, per_page=pagination.per_page) }}" aria-label="Previous">
+                                    <span aria-hidden="true">&laquo;</span>
+                                </a>
+                            </li>
+
+                            {% set start_page = [1, pagination.page - 2]|max %}
+                            {% set end_page = [pagination.total_pages, pagination.page + 2]|min %}
+
+                            {% if start_page > 1 %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('files.index', subpath=current_path, page=1, per_page=pagination.per_page) }}">1</a>
+                            </li>
+                            {% if start_page > 2 %}
+                            <li class="page-item disabled">
+                                <span class="page-link">...</span>
+                            </li>
+                            {% endif %}
+                            {% endif %}
+
+                            {% for p in range(start_page, end_page + 1) %}
+                            <li class="page-item {% if p == pagination.page %}active{% endif %}">
+                                <a class="page-link" href="{{ url_for('files.index', subpath=current_path, page=p, per_page=pagination.per_page) }}">{{ p }}</a>
+                            </li>
+                            {% endfor %}
+
+                            {% if end_page < pagination.total_pages %}
+                            {% if end_page < pagination.total_pages - 1 %}
+                            <li class="page-item disabled">
+                                <span class="page-link">...</span>
+                            </li>
+                            {% endif %}
+                            <li class="page-item">
+                                <a class="page-link" href="{{ url_for('files.index', subpath=current_path, page=pagination.total_pages, per_page=pagination.per_page) }}">{{ pagination.total_pages }}</a>
+                            </li>
+                            {% endif %}
+
+                            <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                                <a class="page-link" href="{{ url_for('files.index', subpath=current_path, page=pagination.page+1, per_page=pagination.per_page) }}" aria-label="Next">
+                                    <span aria-hidden="true">&raquo;</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </nav>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Upload Modal -->
+<div class="modal fade" id="uploadModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-upload me-2"></i>Upload Files</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="uploadDropZone" class="upload-drop-zone mb-3">
+                    <i class="bi bi-cloud-upload display-4 d-block mb-2"></i>
+                    <p>Drag & drop files here or click to select files</p>
+                    <input type="file" id="fileInput" multiple style="display: none;">
+                    <button type="button" class="btn btn-primary" id="browseButton">Browse Files</button>
+                </div>
+                <div class="progress" style="height: 25px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%">
+                        <span id="progressText" class="fw-bold">0%</span>
+                    </div>
+                </div>
+                <div id="uploadStatus" class="mt-2"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Upload Tasks Panel -->
+<div class="position-fixed bottom-0 start-0 p-3" style="z-index: 11; max-width: 400px; width: 100%;">
+    <div id="uploadTasksPanel" class="card shadow" style="display: none;">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="bi bi-upload me-2"></i>Upload Tasks</h6>
+            <div>
+                <button type="button" class="btn btn-sm btn-outline-light me-1" id="collapseTasksBtn">
+                    <i class="bi bi-chevron-down"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-light" id="closeTasksBtn">
+                    <i class="bi bi-x"></i>
+                </button>
+            </div>
+        </div>
+        <div class="card-body p-2" id="tasksPanelBody">
+            <div id="uploadTasks" class="mb-2">
+                <!-- Individual upload tasks will be added here -->
+            </div>
+            <div class="d-flex justify-content-between align-items-center">
+                <span class="badge bg-primary" id="tasksCounter">0 tasks</span>
+                <div>
+                    <button class="btn btn-sm btn-outline-danger me-1" id="clearTasksBtn">
+                        <i class="bi bi-trash me-1"></i>Clear
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary" id="reloadPageBtn" style="display: none;">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Reload Page
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Upload Progress Toast (kept for compatibility) -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
+    <div id="uploadToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true" data-bs-autohide="false">
+        <div class="toast-header bg-primary text-white">
+            <i class="bi bi-upload me-2"></i>
+            <strong class="me-auto">File Upload</strong>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body">
+            <div class="progress mb-2" style="height: 20px;">
+                <div id="toastProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%">
+                    <span id="toastProgressText" class="fw-bold">0%</span>
+                </div>
+            </div>
+            <div id="toastStatus"></div>
+        </div>
+    </div>
+</div>
+
+<!-- New Folder Modal -->
+<div class="modal fade" id="newFolderModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-folder-plus me-2"></i>Create New Folder</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ url_for('files.create_folder') }}" method="post">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="folderName" class="form-label">Folder Name</label>
+                        <input type="text" class="form-control" id="folderName" name="folder_name" required>
+                        <input type="hidden" name="path" value="{{ current_path }}">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Folder</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Rename Modal -->
+<div class="modal fade" id="renameModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Rename</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="renameForm" action="" method="post">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="newName" class="form-label">New Name</label>
+                        <input type="text" class="form-control" id="newName" name="new_name" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Rename</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-trash me-2"></i>Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete <strong id="deleteItemName"></strong>?</p>
+                <p class="text-danger">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="deleteForm" action="" method="post">
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // URLs for navigation
+    const URLS = {
+        index: "{{ url_for('files.index') }}",
+        preview: "{{ url_for('files.preview', subpath='') }}"
+    };
+
+    // Current path
+    const CURRENT_PATH = "{{ current_path }}";
+
+    // Storage info is handled in the DOM content loaded event
+
+    // Handle changing items per page
+    function changeItemsPerPage(perPage) {
+        const currentUrl = new URL(window.location.href);
+        currentUrl.searchParams.set('per_page', perPage);
+        currentUrl.searchParams.set('page', 1); // Reset to page 1 when changing items per page
+        window.location.href = currentUrl.toString();
+    }
+
+    // Handle file/folder item click
+    function handleItemClick(element) {
+        const isDir = element.getAttribute('data-is-dir') === 'true';
+        const path = element.getAttribute('data-path');
+
+        if (isDir) {
+            // Make sure path is properly encoded
+            const encodedPath = encodeURIComponent(path);
+            console.log("Navigating to folder:", path, "Encoded:", encodedPath);
+
+            // Use browse route directly instead of index with query parameter
+            // Reset to page 1 when navigating to a new folder
+            if (path) {
+                window.location.href = "{{ url_for('files.index', subpath='') }}" + encodedPath + "?page=1";
+            } else {
+                window.location.href = "{{ url_for('files.index') }}?page=1";
+            }
+        } else {
+            window.location.href = URLS.preview + encodeURIComponent(path);
+        }
+    }
+
+    // Handle parent directory navigation
+    function goToParentDirectory() {
+        if (CURRENT_PATH.includes('/')) {
+            const parentPath = CURRENT_PATH.substring(0, CURRENT_PATH.lastIndexOf('/'));
+            // Use browse route directly and reset to page 1
+            if (parentPath) {
+                window.location.href = "{{ url_for('files.index', subpath='') }}" + encodeURIComponent(parentPath) + "?page=1";
+            } else {
+                window.location.href = "{{ url_for('files.index') }}?page=1";
+            }
+        } else {
+            window.location.href = "{{ url_for('files.index') }}?page=1";
+        }
+    }
+
+    // File upload handling
+    document.addEventListener('DOMContentLoaded', function() {
+        // System info elements
+        const cpuUsageElement = document.getElementById('cpuUsage');
+        const ramUsageElement = document.getElementById('ramUsage');
+        const storageInfoElement = document.getElementById('storageInfo');
+
+        // Initialize text colors based on current theme
+        const isDarkMode = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+        if (isDarkMode) {
+            if (cpuUsageElement) cpuUsageElement.classList.replace('text-dark', 'text-light');
+            if (ramUsageElement) ramUsageElement.classList.replace('text-dark', 'text-light');
+            if (storageInfoElement) storageInfoElement.classList.replace('text-dark', 'text-light');
+        }
+
+        // Function to update system info
+        function updateSystemInfo() {
+            fetch('{{ url_for("files.system_info") }}')
+                .then(response => response.json())
+                .then(data => {
+                    // Check if we're in dark mode
+                    const isDarkMode = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+                    const defaultTextClass = isDarkMode ? 'text-light' : 'text-dark';
+
+                    // Update CPU usage
+                    if (cpuUsageElement) {
+                        // Validate CPU value to ensure it's reasonable
+                        let cpuPercent = parseFloat(data.cpu_percent);
+
+                        // Check if the value is valid and reasonable
+                        if (isNaN(cpuPercent) || cpuPercent < 0 || cpuPercent > 100) {
+                            cpuPercent = 0; // Default to 0 if value is unreasonable
+                        }
+
+                        // Format with one decimal place
+                        const formattedCpuPercent = cpuPercent.toFixed(1);
+                        cpuUsageElement.textContent = `${formattedCpuPercent}%`;
+
+                        // Change color based on usage
+                        if (cpuPercent > 80) {
+                            cpuUsageElement.className = 'text-danger';
+                        } else if (cpuPercent > 50) {
+                            cpuUsageElement.className = 'text-warning';
+                        } else {
+                            cpuUsageElement.className = defaultTextClass;
+                        }
+                    }
+
+                    // Update RAM usage
+                    if (ramUsageElement) {
+                        const memPercent = Math.round(data.memory_percent);
+                        ramUsageElement.textContent = `${data.memory_used} / ${data.memory_total} (${memPercent}%)`;
+
+                        // Change color based on usage
+                        if (memPercent > 80) {
+                            ramUsageElement.className = 'text-danger';
+                        } else if (memPercent > 50) {
+                            ramUsageElement.className = 'text-warning';
+                        } else {
+                            ramUsageElement.className = defaultTextClass;
+                        }
+                    }
+
+                    // Update storage information
+                    if (storageInfoElement && data.storage_used && data.storage_total) {
+                        storageInfoElement.textContent = `${data.storage_used} / ${data.storage_total}`;
+                        storageInfoElement.className = defaultTextClass;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching system info:', error);
+                    if (cpuUsageElement) cpuUsageElement.textContent = 'N/A';
+                    if (ramUsageElement) ramUsageElement.textContent = 'N/A';
+                    if (storageInfoElement) storageInfoElement.textContent = 'N/A';
+                });
+        }
+
+        // Update system info immediately and then every 5 seconds
+        updateSystemInfo();
+        setInterval(updateSystemInfo, 5000);
+
+        // Listen for theme changes to update text colors
+        const observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                if (mutation.attributeName === 'data-bs-theme') {
+                    // Theme changed, update the system info display
+                    updateSystemInfo();
+                }
+            });
+        });
+
+        // Start observing theme changes
+        observer.observe(document.documentElement, { attributes: true });
+        const dropZone = document.getElementById('uploadDropZone');
+        const fileInput = document.getElementById('fileInput');
+        const browseButton = document.getElementById('browseButton');
+        const progressBar = document.querySelector('.progress');
+        const progressBarInner = document.querySelector('.progress-bar');
+        const uploadStatus = document.getElementById('uploadStatus');
+
+        // Click browse button to select files
+        browseButton.addEventListener('click', function() {
+            fileInput.click();
+        });
+
+        // Handle file selection
+        fileInput.addEventListener('change', function() {
+            if (fileInput.files.length > 0) {
+                uploadFiles(fileInput.files);
+            }
+        });
+
+        // Drag and drop events
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight() {
+            dropZone.classList.add('highlight');
+        }
+
+        function unhighlight() {
+            dropZone.classList.remove('highlight');
+        }
+
+        // Handle dropped files
+        dropZone.addEventListener('drop', function(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+
+            if (files.length > 0) {
+                uploadFiles(files);
+            }
+        });
+
+        // Get toast elements
+        const uploadToast = document.getElementById('uploadToast');
+        const toastProgressBar = document.getElementById('toastProgressBar');
+        const toastProgressText = document.getElementById('toastProgressText');
+        const toastStatus = document.getElementById('toastStatus');
+        const progressText = document.getElementById('progressText');
+
+        // Get tasks panel elements
+        const uploadTasksPanel = document.getElementById('uploadTasksPanel');
+        const uploadTasks = document.getElementById('uploadTasks');
+        const tasksCounter = document.getElementById('tasksCounter');
+        const reloadPageBtn = document.getElementById('reloadPageBtn');
+        const collapseTasksBtn = document.getElementById('collapseTasksBtn');
+        const closeTasksBtn = document.getElementById('closeTasksBtn');
+        const tasksPanelBody = document.getElementById('tasksPanelBody');
+
+        // Tasks panel state
+        let isTasksPanelCollapsed = false;
+        let activeTasksCount = 0;
+
+        // Create Bootstrap toast instance
+        const toast = new bootstrap.Toast(uploadToast);
+
+        // Tasks panel event handlers
+        collapseTasksBtn.addEventListener('click', function() {
+            if (isTasksPanelCollapsed) {
+                tasksPanelBody.style.display = 'block';
+                collapseTasksBtn.innerHTML = '<i class="bi bi-chevron-down"></i>';
+                isTasksPanelCollapsed = false;
+            } else {
+                tasksPanelBody.style.display = 'none';
+                collapseTasksBtn.innerHTML = '<i class="bi bi-chevron-up"></i>';
+                isTasksPanelCollapsed = true;
+            }
+        });
+
+        closeTasksBtn.addEventListener('click', function() {
+            uploadTasksPanel.style.display = 'none';
+        });
+
+        reloadPageBtn.addEventListener('click', function() {
+            window.location.reload();
+        });
+
+        // Clear tasks button
+        const clearTasksBtn = document.getElementById('clearTasksBtn');
+        clearTasksBtn.addEventListener('click', function() {
+            // Clear completed tasks, keep active ones
+            const taskElements = uploadTasks.querySelectorAll('.card');
+            taskElements.forEach(function(task) {
+                const taskId = task.id;
+                const progressBar = document.getElementById(`${taskId}-progress`);
+
+                // Only remove completed tasks (those that don't have the animated class)
+                if (progressBar && !progressBar.classList.contains('progress-bar-animated')) {
+                    task.remove();
+                }
+            });
+
+            // If no tasks left, hide the reload button
+            if (uploadTasks.querySelectorAll('.card').length === 0) {
+                reloadPageBtn.style.display = 'none';
+            }
+        });
+
+        // Format file size
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // Create a task element for a file
+        function createTaskElement(file, index) {
+            const taskId = `task-${Date.now()}-${index}`;
+            const taskElement = document.createElement('div');
+            taskElement.className = 'card mb-2';
+            taskElement.id = taskId;
+
+            taskElement.innerHTML = `
+                <div class="card-body p-2">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="text-truncate" title="${file.name}" style="max-width: 250px;">${file.name}</span>
+                        <span class="badge bg-info">${formatFileSize(file.size)}</span>
+                    </div>
+                    <div class="progress" style="height: 15px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar" style="width: 0%" id="${taskId}-progress">
+                            <span class="small fw-bold" id="${taskId}-progress-text">0%</span>
+                        </div>
+                    </div>
+                    <div class="small mt-1" id="${taskId}-status">Preparing upload...</div>
+                </div>
+            `;
+
+            return { element: taskElement, id: taskId };
+        }
+
+        // Update task progress
+        function updateTaskProgress(taskId, progress, statusText) {
+            const progressBar = document.getElementById(`${taskId}-progress`);
+            const progressText = document.getElementById(`${taskId}-progress-text`);
+            const statusElement = document.getElementById(`${taskId}-status`);
+
+            if (progressBar && progressText) {
+                progressBar.style.width = `${progress}%`;
+                progressText.textContent = `${progress}%`;
+            }
+
+            if (statusElement && statusText) {
+                statusElement.textContent = statusText;
+            }
+        }
+
+        // Update task status
+        function updateTaskStatus(taskId, status, isSuccess) {
+            const taskElement = document.getElementById(taskId);
+            const statusElement = document.getElementById(`${taskId}-status`);
+            const progressBar = document.getElementById(`${taskId}-progress`);
+
+            if (statusElement) {
+                statusElement.textContent = status;
+            }
+
+            if (progressBar) {
+                progressBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+                if (isSuccess) {
+                    progressBar.classList.add('bg-success');
+                } else {
+                    progressBar.classList.add('bg-danger');
+                }
+            }
+
+            activeTasksCount--;
+            updateTasksCounter();
+        }
+
+        // Update tasks counter
+        function updateTasksCounter() {
+            tasksCounter.textContent = `${activeTasksCount} active tasks`;
+
+            if (activeTasksCount === 0) {
+                reloadPageBtn.style.display = 'block';
+            }
+        }
+
+        // Upload files function
+        function uploadFiles(files) {
+            // Show progress in modal
+            progressBar.style.display = 'flex';
+            progressBarInner.style.width = '0%';
+            progressText.textContent = '0%';
+            uploadStatus.innerHTML = '';
+
+            // Show toast for background upload
+            toastProgressBar.style.width = '0%';
+            toastProgressText.textContent = '0%';
+            toastStatus.innerHTML = '';
+            toast.show();
+
+            // Show tasks panel
+            uploadTasksPanel.style.display = 'block';
+            if (isTasksPanelCollapsed) {
+                tasksPanelBody.style.display = 'none';
+            } else {
+                tasksPanelBody.style.display = 'block';
+            }
+
+            // Track upload progress
+            let completed = 0;
+            let totalUploaded = 0;
+            const total = files.length;
+            const totalSize = Array.from(files).reduce((sum, file) => sum + file.size, 0);
+            let uploadedSize = 0;
+
+            // Update active tasks count
+            activeTasksCount += files.length;
+            updateTasksCounter();
+
+            // Store XHR objects and task elements
+            const xhrList = [];
+            const taskElements = [];
+
+            // Create task elements for each file
+            for (let i = 0; i < files.length; i++) {
+                const task = createTaskElement(files[i], i);
+                uploadTasks.appendChild(task.element);
+                taskElements.push(task);
+            }
+
+            // Upload each file
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const taskId = taskElements[i].id;
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('path', CURRENT_PATH);
+
+                const xhr = new XMLHttpRequest();
+                xhr.taskId = taskId; // Store task ID with XHR
+                xhrList.push(xhr);
+
+                xhr.open('POST', '{{ url_for("files.upload") }}', true);
+
+                xhr.upload.addEventListener('progress', function(e) {
+                    if (e.lengthComputable) {
+                        // Update individual file progress
+                        const fileProgress = Math.round((e.loaded / e.total) * 100);
+
+                        // Update task progress
+                        updateTaskProgress(
+                            taskId,
+                            fileProgress,
+                            `Uploading: ${formatFileSize(e.loaded)} of ${formatFileSize(e.total)}`
+                        );
+
+                        // Update total progress for modal and toast
+                        const previousLoaded = uploadedSize;
+                        uploadedSize = previousLoaded + e.loaded - xhr.lastLoaded || 0;
+                        xhr.lastLoaded = e.loaded;
+
+                        const totalProgress = (uploadedSize / totalSize) * 100;
+                        const progressPercent = Math.min(Math.round(totalProgress), 100);
+
+                        // Update both modal and toast progress
+                        progressBarInner.style.width = progressPercent + '%';
+                        progressText.textContent = progressPercent + '%';
+                        toastProgressBar.style.width = progressPercent + '%';
+                        toastProgressText.textContent = progressPercent + '%';
+
+                        // Update toast status
+                        const statusText = `Uploading ${i+1}/${total}: ${file.name} (${fileProgress}%)`;
+                        toastStatus.innerHTML = `<div>${statusText}</div>`;
+                    }
+                });
+
+                xhr.onload = function() {
+                    completed++;
+
+                    if (xhr.status === 200) {
+                        const response = JSON.parse(xhr.responseText);
+                        uploadStatus.innerHTML += `<div class="alert alert-success">Uploaded: ${file.name}</div>`;
+                        toastStatus.innerHTML += `<div class="text-success">✓ Uploaded: ${file.name}</div>`;
+
+                        // Update task status
+                        updateTaskStatus(xhr.taskId, 'Upload complete', true);
+                    } else {
+                        uploadStatus.innerHTML += `<div class="alert alert-danger">Failed to upload: ${file.name}</div>`;
+                        toastStatus.innerHTML += `<div class="text-danger">✗ Failed: ${file.name}</div>`;
+
+                        // Update task status
+                        updateTaskStatus(xhr.taskId, 'Upload failed: ' + (xhr.responseText || 'Unknown error'), false);
+                    }
+
+                    // Update progress to 100% when all files are completed
+                    if (completed === total) {
+                        progressBarInner.style.width = '100%';
+                        progressText.textContent = '100%';
+                        toastProgressBar.style.width = '100%';
+                        toastProgressText.textContent = '100%';
+
+                        // Add reload button to toast
+                        toastStatus.innerHTML += `
+                            <div class="mt-2">
+                                <button class="btn btn-primary btn-sm" onclick="window.location.reload()">
+                                    <i class="bi bi-arrow-clockwise me-1"></i>Reload Page
+                                </button>
+                            </div>
+                        `;
+                    }
+                };
+
+                xhr.onerror = function() {
+                    completed++;
+                    uploadStatus.innerHTML += `<div class="alert alert-danger">Error uploading: ${file.name}</div>`;
+                    toastStatus.innerHTML += `<div class="text-danger">✗ Error: ${file.name}</div>`;
+
+                    // Update task status
+                    updateTaskStatus(xhr.taskId, 'Network error during upload', false);
+
+                    if (completed === total) {
+                        // Add reload button to toast
+                        toastStatus.innerHTML += `
+                            <div class="mt-2">
+                                <button class="btn btn-primary btn-sm" onclick="window.location.reload()">
+                                    <i class="bi bi-arrow-clockwise me-1"></i>Reload Page
+                                </button>
+                            </div>
+                        `;
+                    }
+                };
+
+                xhr.send(formData);
+            }
+
+            // Allow modal to be closed without canceling uploads
+            document.querySelector('#uploadModal .btn-close').addEventListener('click', function() {
+                // Just show a message that upload continues in background
+                toastStatus.innerHTML += `<div class="text-info">Upload continues in background...</div>`;
+            });
+        }
+
+        // Rename modal
+        const renameModal = document.getElementById('renameModal');
+        renameModal.addEventListener('show.bs.modal', function(event) {
+            const button = event.relatedTarget;
+            const path = button.getAttribute('data-path');
+            const name = button.getAttribute('data-name');
+
+            const form = document.getElementById('renameForm');
+            form.action = '{{ url_for("files.rename", subpath="") }}' + path;
+
+            const nameInput = document.getElementById('newName');
+            nameInput.value = name;
+        });
+
+        // Delete modal
+        const deleteModal = document.getElementById('deleteModal');
+        deleteModal.addEventListener('show.bs.modal', function(event) {
+            const button = event.relatedTarget;
+            const path = button.getAttribute('data-path');
+            const name = button.getAttribute('data-name');
+
+            const form = document.getElementById('deleteForm');
+            form.action = '{{ url_for("files.delete", subpath="") }}' + path;
+
+            const nameSpan = document.getElementById('deleteItemName');
+            nameSpan.textContent = name;
+        });
+    });
+</script>
+{% endblock %}

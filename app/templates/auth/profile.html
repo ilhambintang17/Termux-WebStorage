@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Profile - Termux NAS{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="bi bi-person-circle me-2"></i>User Profile</h4>
+            </div>
+            <div class="card-body">
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <h5>Account Information</h5>
+                        <p><strong>Username:</strong> {{ current_user.username }}</p>
+                        <p><strong>Email:</strong> {{ current_user.email }}</p>
+                        <p><strong>Role:</strong> {% if current_user.is_admin %}Administrator{% else %}User{% endif %}</p>
+                        <p><strong>Joined:</strong> {{ current_user.created_at.strftime('%Y-%m-%d') }}</p>
+                        <p><strong>Last Login:</strong> {{ current_user.last_login.strftime('%Y-%m-%d %H:%M') if current_user.last_login else 'Never' }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h5>Preferences</h5>
+                        <p><strong>Theme:</strong> {{ current_user.theme_preference.capitalize() }}</p>
+                        <div class="btn-group" role="group">
+                            <a href="{{ url_for('auth.set_theme', theme='light') }}" class="btn btn-outline-primary {% if current_user.theme_preference == 'light' %}active{% endif %}">
+                                <i class="bi bi-sun me-1"></i>Light
+                            </a>
+                            <a href="{{ url_for('auth.set_theme', theme='dark') }}" class="btn btn-outline-primary {% if current_user.theme_preference == 'dark' %}active{% endif %}">
+                                <i class="bi bi-moon me-1"></i>Dark
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                
+                <h5 class="mt-4">Change Password</h5>
+                <form method="POST" action="{{ url_for('auth.profile') }}">
+                    {{ form.hidden_tag() }}
+                    <div class="mb-3">
+                        {{ form.current_password.label(class="form-label") }}
+                        {{ form.current_password(class="form-control") }}
+                        {% for error in form.current_password.errors %}
+                        <div class="text-danger">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                    <div class="mb-3">
+                        {{ form.new_password.label(class="form-label") }}
+                        {{ form.new_password(class="form-control") }}
+                        {% for error in form.new_password.errors %}
+                        <div class="text-danger">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                    <div class="mb-3">
+                        {{ form.confirm_password.label(class="form-label") }}
+                        {{ form.confirm_password(class="form-control") }}
+                        {% for error in form.confirm_password.errors %}
+                        <div class="text-danger">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                    <div>
+                        {{ form.submit(class="btn btn-primary") }}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
